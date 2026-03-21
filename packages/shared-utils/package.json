@@ -1,0 +1,23 @@
+{
+  "name": "@bx/shared-utils",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "dev": "tsc --watch",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "uuid": "^11.0.5",
+    "zod": "^3.24.1",
+    "crypto-js": "^4.2.0"
+  },
+  "devDependencies": {
+    "@types/uuid": "^10.0.0",
+    "@types/crypto-js": "^4.2.2",
+    "@types/node": "^22.10.6"
+  }
+}

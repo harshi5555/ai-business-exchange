@@ -1,0 +1,25 @@
+{
+  "name": "@bx/database",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "dev": "tsc --watch",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "node-pg-migrate up",
+    "db:migrate:down": "node-pg-migrate down",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "node-pg-migrate": "^7.9.1",
+    "pg": "^8.13.3"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22.10.6",
+    "@types/pg": "^8.11.11"
+  }
+}

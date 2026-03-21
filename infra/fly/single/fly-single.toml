@@ -1,0 +1,47 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Fly.io config — single-host deployment
+# All services run in one machine behind nginx on port 8080.
+# App name defaults to "bx-app" — change if needed (must be globally unique).
+# ─────────────────────────────────────────────────────────────────────────────
+app = "bx-app"
+primary_region = "arn"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "Dockerfile.single"
+
+[env]
+  NODE_ENV = "production"
+
+# nginx listens on 8080; Fly routes 443/80 → 8080
+[[services]]
+  internal_port = 8080
+  protocol      = "tcp"
+
+  [[services.ports]]
+    handlers = ["http"]
+    port     = 80
+    force_https = true
+
+  [[services.ports]]
+    handlers = ["tls", "http"]
+    port     = 443
+
+  [services.concurrency]
+    type       = "requests"
+    hard_limit = 250
+    soft_limit = 200
+
+  [[services.http_checks]]
+    grace_period  = "30s"
+    interval      = "15s"
+    method        = "GET"
+    path          = "/health"
+    timeout       = "5s"
+    restart_limit = 0
+
+# Single machine with enough RAM for 9 Node processes + nginx
+[[vm]]
+  size   = "performance-1x"   # 1 dedicated CPU, 2 GB RAM
+  memory = "2gb"

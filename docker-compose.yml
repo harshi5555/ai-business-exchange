@@ -1,0 +1,170 @@
+services:
+  # ─── Data stores ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: bx-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: business_exchange
+      POSTGRES_USER: bx_user
+      POSTGRES_PASSWORD: bx_password
+    ports:
+      - "11007:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./packages/database/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bx_user -d business_exchange"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Services ─────────────────────────────────────────────────────────────────
+  gateway:
+    build:
+      context: .
+      dockerfile: apps/gateway/Dockerfile
+    container_name: bx-gateway
+    restart: unless-stopped
+    ports:
+      - "11000:3000"
+    environment:
+      PORT: 3000
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-production}
+      AUTH_SERVICE_URL: http://auth-service:3001
+      PARTNER_SERVICE_URL: http://partner-service:3002
+      SUBSCRIPTION_SERVICE_URL: http://subscription-service:3003
+      INTEGRATION_SERVICE_URL: http://integration-service:3004
+      MAPPING_ENGINE_URL: http://mapping-engine:3005
+      AGENT_ORCHESTRATOR_URL: http://agent-orchestrator:3006
+      BILLING_SERVICE_URL: http://billing-service:3007
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+    depends_on:
+      - auth-service
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: apps/auth-service/Dockerfile
+    container_name: bx-auth-service
+    restart: unless-stopped
+    ports:
+      - "11001:3001"
+    environment:
+      PORT: 3001
+      DATABASE_URL: postgresql://bx_user:bx_password@postgres:5432/business_exchange
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-production}
+      JWT_EXPIRES_IN: 1h
+      REFRESH_EXPIRES_IN: 7 days
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  partner-service:
+    build:
+      context: .
+      dockerfile: apps/partner-service/Dockerfile
+    container_name: bx-partner-service
+    restart: unless-stopped
+    ports:
+      - "11002:3002"
+    environment:
+      PORT: 3002
+      DATABASE_URL: postgresql://bx_user:bx_password@postgres:5432/business_exchange
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  subscription-service:
+    build:
+      context: .
+      dockerfile: apps/subscription-service/Dockerfile
+    container_name: bx-subscription-service
+    restart: unless-stopped
+    ports:
+      - "11003:3003"
+    environment:
+      PORT: 3003
+      DATABASE_URL: postgresql://bx_user:bx_password@postgres:5432/business_exchange
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  integration-service:
+    build:
+      context: .
+      dockerfile: apps/integration-service/Dockerfile
+    container_name: bx-integration-service
+    restart: unless-stopped
+    ports:
+      - "11004:3004"
+    environment:
+      PORT: 3004
+      DATABASE_URL: postgresql://bx_user:bx_password@postgres:5432/business_exchange
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-dev-webhook-secret}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  mapping-engine:
+    build:
+      context: .
+      dockerfile: apps/mapping-engine/Dockerfile
+    container_name: bx-mapping-engine
+    restart: unless-stopped
+    ports:
+      - "11005:3005"
+    environment:
+      PORT: 3005
+      DATABASE_URL: postgresql://bx_user:bx_password@postgres:5432/business_exchange
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  agent-orchestrator:
+    build:
+      context: .
+      dockerfile: apps/agent-orchestrator/Dockerfile
+    container_name: bx-agent-orchestrator
+    restart: unless-stopped
+    ports:
+      - "11006:3006"
+    environment:
+      PORT: 3006
+      DATABASE_URL: postgresql://bx_user:bx_password@postgres:5432/business_exchange
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-dev-webhook-secret}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  billing-service:
+    build:
+      context: .
+      dockerfile: apps/billing-service/Dockerfile
+    container_name: bx-billing-service
+    restart: unless-stopped
+    ports:
+      - "11010:3007"
+    environment:
+      PORT: 3007
+      DATABASE_URL: postgresql://bx_user:bx_password@postgres:5432/business_exchange
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  partner-portal:
+    build:
+      context: .
+      dockerfile: apps/partner-portal/Dockerfile
+    container_name: bx-partner-portal
+    restart: unless-stopped
+    ports:
+      - "11009:3100"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:11000
+    depends_on:
+      - gateway
+
+volumes:
+  postgres_data:

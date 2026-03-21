@@ -1,0 +1,140 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Single-host Dockerfile — builds every service in one image.
+# Runs all processes under supervisord, fronted by nginx on port 8080.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Stage 1: Install all workspace dependencies ───────────────────────────────
+FROM node:20-alpine AS deps
+WORKDIR /app
+RUN apk add --no-cache libc6-compat
+
+COPY package.json package-lock.json turbo.json tsconfig.base.json ./
+
+# All package manifests (workspace resolution)
+COPY packages/shared-types/package.json  ./packages/shared-types/
+COPY packages/shared-utils/package.json  ./packages/shared-utils/
+COPY packages/logger/package.json        ./packages/logger/
+COPY packages/database/package.json      ./packages/database/
+COPY apps/gateway/package.json             ./apps/gateway/
+COPY apps/auth-service/package.json        ./apps/auth-service/
+COPY apps/partner-service/package.json     ./apps/partner-service/
+COPY apps/subscription-service/package.json ./apps/subscription-service/
+COPY apps/integration-service/package.json ./apps/integration-service/
+COPY apps/mapping-engine/package.json      ./apps/mapping-engine/
+COPY apps/agent-orchestrator/package.json  ./apps/agent-orchestrator/
+COPY apps/billing-service/package.json     ./apps/billing-service/
+COPY apps/partner-portal/package.json      ./apps/partner-portal/
+
+RUN npm install --legacy-peer-deps
+
+# ── Stage 2: Build all shared packages ───────────────────────────────────────
+FROM deps AS builder
+WORKDIR /app
+
+# Shared packages
+COPY packages/shared-types/src          ./packages/shared-types/src
+COPY packages/shared-types/tsconfig.json ./packages/shared-types/tsconfig.json
+RUN npm run build -w packages/shared-types
+
+COPY packages/logger/src                ./packages/logger/src
+COPY packages/logger/tsconfig.json      ./packages/logger/tsconfig.json
+RUN npm run build -w packages/logger
+
+COPY packages/shared-utils/src          ./packages/shared-utils/src
+COPY packages/shared-utils/tsconfig.json ./packages/shared-utils/tsconfig.json
+RUN npm run build -w packages/shared-utils
+
+COPY packages/database/src              ./packages/database/src
+COPY packages/database/tsconfig.json    ./packages/database/tsconfig.json
+RUN npm run build -w packages/database
+
+# Copy migration SQL files (needed at runtime for DB init)
+COPY packages/database/migrations       ./packages/database/migrations
+
+# ── Backend services ──────────────────────────────────────────────────────────
+COPY apps/gateway/src              ./apps/gateway/src
+COPY apps/gateway/tsconfig.json    ./apps/gateway/tsconfig.json
+RUN npm run build -w apps/gateway
+
+COPY apps/auth-service/src             ./apps/auth-service/src
+COPY apps/auth-service/tsconfig.json   ./apps/auth-service/tsconfig.json
+RUN npm run build -w apps/auth-service
+
+COPY apps/partner-service/src          ./apps/partner-service/src
+COPY apps/partner-service/tsconfig.json ./apps/partner-service/tsconfig.json
+RUN npm run build -w apps/partner-service
+
+COPY apps/subscription-service/src         ./apps/subscription-service/src
+COPY apps/subscription-service/tsconfig.json ./apps/subscription-service/tsconfig.json
+RUN npm run build -w apps/subscription-service
+
+COPY apps/integration-service/src          ./apps/integration-service/src
+COPY apps/integration-service/tsconfig.json ./apps/integration-service/tsconfig.json
+RUN npm run build -w apps/integration-service
+
+COPY apps/mapping-engine/src           ./apps/mapping-engine/src
+COPY apps/mapping-engine/tsconfig.json ./apps/mapping-engine/tsconfig.json
+RUN npm run build -w apps/mapping-engine
+
+COPY apps/agent-orchestrator/src           ./apps/agent-orchestrator/src
+COPY apps/agent-orchestrator/tsconfig.json ./apps/agent-orchestrator/tsconfig.json
+RUN npm run build -w apps/agent-orchestrator
+
+COPY apps/billing-service/src          ./apps/billing-service/src
+COPY apps/billing-service/tsconfig.json ./apps/billing-service/tsconfig.json
+RUN npm run build -w apps/billing-service
+
+# ── Next.js portal (NEXT_PUBLIC_API_URL="" → relative paths via nginx) ────────
+COPY apps/partner-portal/src            ./apps/partner-portal/src
+COPY apps/partner-portal/public         ./apps/partner-portal/public
+COPY apps/partner-portal/tsconfig.json  ./apps/partner-portal/tsconfig.json
+COPY apps/partner-portal/next.config.js ./apps/partner-portal/next.config.js
+COPY apps/partner-portal/tailwind.config.js ./apps/partner-portal/tailwind.config.js
+COPY apps/partner-portal/postcss.config.js ./apps/partner-portal/postcss.config.js
+
+# Empty string → axios uses relative paths → nginx routes /api/* to gateway
+ARG NEXT_PUBLIC_API_URL=
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm run build -w apps/partner-portal
+
+# ── Stage 3: Lean production runner ──────────────────────────────────────────
+FROM node:20-alpine AS runner
+WORKDIR /app
+
+# Runtime deps: nginx + supervisord
+RUN apk add --no-cache nginx supervisor postgresql-client
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# node_modules (workspace symlinks intact)
+COPY --from=builder /app/node_modules ./node_modules
+
+# Shared packages (dist + package.json for module resolution)
+COPY --from=builder /app/packages ./packages
+
+# Service dist bundles
+COPY --from=builder /app/apps/gateway/dist           ./apps/gateway/dist
+COPY --from=builder /app/apps/auth-service/dist      ./apps/auth-service/dist
+COPY --from=builder /app/apps/partner-service/dist   ./apps/partner-service/dist
+COPY --from=builder /app/apps/subscription-service/dist ./apps/subscription-service/dist
+COPY --from=builder /app/apps/integration-service/dist ./apps/integration-service/dist
+COPY --from=builder /app/apps/mapping-engine/dist    ./apps/mapping-engine/dist
+COPY --from=builder /app/apps/agent-orchestrator/dist ./apps/agent-orchestrator/dist
+COPY --from=builder /app/apps/billing-service/dist   ./apps/billing-service/dist
+
+# Next.js portal
+COPY --from=builder /app/apps/partner-portal/.next        ./apps/partner-portal/.next
+COPY --from=builder /app/apps/partner-portal/package.json ./apps/partner-portal/package.json
+COPY --from=builder /app/apps/partner-portal/next.config.js ./apps/partner-portal/next.config.js
+COPY --from=builder /app/apps/partner-portal/public       ./apps/partner-portal/public
+
+# Configuration files
+COPY infra/fly/single/supervisord.conf /etc/supervisord.conf
+COPY infra/fly/single/nginx-single.conf /etc/nginx/nginx.conf
+COPY infra/fly/single/start-single.sh /start.sh
+RUN chmod +x /start.sh
+
+EXPOSE 8080
+CMD ["/start.sh"]

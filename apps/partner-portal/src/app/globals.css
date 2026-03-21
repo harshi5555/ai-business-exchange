@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --brand: #6366f1;
+  --brand-dark: #4f46e5;
+}
+
+body { @apply bg-gray-50 text-gray-900 antialiased; }
+
+/* Dynamic brand color utilities */
+.bg-brand { background-color: var(--brand); }
+.text-brand { color: var(--brand); }
+.border-brand { border-color: var(--brand); }
+.ring-brand { --tw-ring-color: var(--brand); }
+.bg-brand-dark { background-color: var(--brand-dark); }
+

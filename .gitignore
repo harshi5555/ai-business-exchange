@@ -1,0 +1,16 @@
+node_modules
+dist
+.turbo
+coverage
+*.log
+.env
+.env.*
+!.env.example
+!.env.fly.example
+!.env.fly.single.example
+!.env.fly.multi.example
+*.tsbuildinfo
+.next/
+
+# Bicep secrets
+infra/bicep/main.bicepparam
