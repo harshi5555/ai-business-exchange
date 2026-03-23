@@ -9,8 +9,9 @@ import { DollarSign, Users, FileText, Plus, Edit2, CheckCircle2, Clock, AlertCir
 const currentPeriod = () => new Date().toISOString().slice(0, 7);
 const fmt = (n: string | number) => `$${parseFloat(String(n)).toFixed(2)}`;
 const fmtNum = (n: number) => n.toLocaleString();
+const opLabel = (op?: string) => op === 'llm-input-token' ? 'LLM Input' : op === 'llm-output-token' ? 'LLM Output' : 'Message';
 
-interface Rate { format: string | null; direction: string | null; rate_per_message: string; included_messages: number }
+interface Rate { format: string | null; direction: string | null; rate_per_message: string; included_messages: number; operation_type?: string }
 interface Plan { id: string; name: string; description: string; base_fee: string; is_active: boolean; rates: Rate[] }
 interface PartnerBillingRow { partner_id: string; partner_name: string; plan_id: string | null; plan_name: string | null; custom_base_fee: string | null; status: string | null; billing_cycle: string | null }
 interface UsageRow { partner_id: string; partner_name: string; period: string; total: number; by_format: Array<{ format: string; direction: string; message_count: number }> }
@@ -177,10 +178,11 @@ export default function AdminBillingPage() {
                       <Input label="Description" value={editingPlan.description} onChange={e => setEditingPlan(p => p ? { ...p, description: e.target.value } : p)} />
                       <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mt-2">Rates</p>
                       <table className="w-full text-sm">
-                        <thead><tr className="text-xs text-gray-500"><th className="text-left pb-1">Format</th><th className="text-left pb-1">Direction</th><th className="text-left pb-1">Rate/msg ($)</th><th className="text-left pb-1">Included</th></tr></thead>
+                        <thead><tr className="text-xs text-gray-500"><th className="text-left pb-1">Type</th><th className="text-left pb-1">Format</th><th className="text-left pb-1">Direction</th><th className="text-left pb-1">Rate/msg ($)</th><th className="text-left pb-1">Included</th></tr></thead>
                         <tbody className="space-y-1">
                           {editingPlan.rates.map((r, i) => (
                             <tr key={i}>
+                              <td className="pr-2 py-1"><span className="text-xs font-medium text-gray-700">{opLabel(r.operation_type)}</span></td>
                               <td className="pr-2 py-1"><span className="uppercase text-xs font-mono">{r.format ?? 'All'}</span></td>
                               <td className="pr-2 py-1"><span className="text-xs text-gray-500">{r.direction ?? 'Both'}</span></td>
                               <td className="pr-2 py-1"><input type="number" step="0.0001" className="border rounded px-2 py-1 text-xs w-24" value={r.rate_per_message} onChange={e => setEditingPlan(p => { if (!p) return p; const rates = [...p.rates]; rates[i] = { ...rates[i], rate_per_message: e.target.value }; return { ...p, rates }; })} /></td>
@@ -197,8 +199,8 @@ export default function AdminBillingPage() {
                   ) : (
                     <div className="border-t pt-3">
                       <table className="w-full text-xs text-gray-600">
-                        <thead><tr className="text-gray-400"><th className="text-left pb-1">Format</th><th className="text-left pb-1">Rate/msg</th><th className="text-left pb-1">Included msgs</th></tr></thead>
-                        <tbody>{plan.rates.map((r, i) => (<tr key={i}><td className="py-0.5 uppercase font-mono">{r.format ?? 'All'}</td><td className="py-0.5">${parseFloat(r.rate_per_message).toFixed(4)}</td><td className="py-0.5">{fmtNum(r.included_messages)}</td></tr>))}</tbody>
+                        <thead><tr className="text-gray-400"><th className="text-left pb-1">Type</th><th className="text-left pb-1">Format</th><th className="text-left pb-1">Rate/msg</th><th className="text-left pb-1">Included msgs</th></tr></thead>
+                        <tbody>{plan.rates.map((r, i) => (<tr key={i}><td className="py-0.5 text-gray-700 font-medium">{opLabel(r.operation_type)}</td><td className="py-0.5 uppercase font-mono">{r.format ?? 'All'}</td><td className="py-0.5">${parseFloat(r.rate_per_message).toFixed(4)}</td><td className="py-0.5">{fmtNum(r.included_messages)}</td></tr>))}</tbody>
                       </table>
                     </div>
                   )}

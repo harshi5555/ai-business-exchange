@@ -9,6 +9,7 @@ interface Plan {
 interface Rate {
   id: string; plan_id: string; format: string | null;
   direction: string | null; rate_per_message: string; included_messages: number;
+  operation_type: string;
 }
 interface PartnerBilling {
   partner_id: string; plan_id: string | null; plan_name: string | null;
@@ -80,12 +81,12 @@ export class BillingService {
     return (await this.getPlan(id))!;
   }
 
-  async upsertRates(planId: string, rates: Array<{ format?: string; direction?: string; rate_per_message: number; included_messages: number }>): Promise<void> {
+  async upsertRates(planId: string, rates: Array<{ format?: string; direction?: string; rate_per_message: number; included_messages: number; operation_type?: string }>): Promise<void> {
     await this.db.query('DELETE FROM billing_rates WHERE plan_id=$1', [planId]);
     for (const r of rates) {
       await this.db.query(
-        'INSERT INTO billing_rates (id,plan_id,format,direction,rate_per_message,included_messages) VALUES ($1,$2,$3,$4,$5,$6)',
-        [generateId(), planId, r.format ?? null, r.direction ?? null, r.rate_per_message, r.included_messages]
+        'INSERT INTO billing_rates (id,plan_id,format,direction,rate_per_message,included_messages,operation_type) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+        [generateId(), planId, r.format ?? null, r.direction ?? null, r.rate_per_message, r.included_messages, r.operation_type ?? 'message']
       );
     }
   }
