@@ -689,11 +689,4 @@ If you are new to the codebase, this order works well:
 
 ## License / usage
 
-No license text is documented in this README. Check repository settings or add a formal license file if this project is intended for broader distribution.
-# ai-exchange
-# ai-exchange
-# ai-exchange
-# ai-exchange
-# ai-exchange
-# ai-exchange
-# ai-business-exchange
+This project is proprietary. All rights reserved by the repository owner. No license is granted for use, distribution, or modification without explicit written permission.
