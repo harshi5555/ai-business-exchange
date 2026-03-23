@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { billingApi } from '@/lib/api';
 import { Card, Badge, StatCard } from '@/components/ui/Card';
-import { CreditCard, TrendingUp, FileText, CheckCircle2, Clock, AlertCircle, Package } from 'lucide-react';
+import { CreditCard, TrendingUp, FileText, CheckCircle2, Clock, AlertCircle, Package, Loader2 } from 'lucide-react';
 
 const currentPeriod = () => new Date().toISOString().slice(0, 7);
 const fmt = (n: string | number) => `$${parseFloat(String(n)).toFixed(2)}`;
@@ -40,6 +40,9 @@ export default function BillingPage() {
   const [period, setPeriod] = useState(currentPeriod());
   const [loading, setLoading] = useState(true);
 
+  const [selectingPlan, setSelectingPlan] = useState<string | null>(null);
+  const [planResult, setPlanResult] = useState<{ ok: boolean; text: string } | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -55,6 +58,21 @@ export default function BillingPage() {
   }, [period]);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleSelectPlan = async (planId: string) => {
+    setSelectingPlan(planId);
+    setPlanResult(null);
+    try {
+      await billingApi.selectPlan(planId);
+      setPlanResult({ ok: true, text: 'Plan updated successfully' });
+      load();
+    } catch (e) {
+      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Failed to select plan';
+      setPlanResult({ ok: false, text: msg });
+    } finally {
+      setSelectingPlan(null);
+    }
+  };
 
   const currentPlan = plans.find(p => p.id === billing?.plan_id);
   const effectiveBase = billing?.custom_base_fee != null
@@ -219,17 +237,36 @@ export default function BillingPage() {
               {/* All Plans — comparison */}
               <Card className="p-6 space-y-4">
                 <h2 className="font-semibold text-gray-900">Available Plans</h2>
+                {planResult && (
+                  <div className={`flex items-center gap-2 rounded-lg px-4 py-3 text-sm ${planResult.ok ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                    {planResult.ok ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+                    {planResult.text}
+                  </div>
+                )}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {plans.map(p => (
-                    <div key={p.id} className={`rounded-xl border p-4 space-y-2 ${p.id === billing?.plan_id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200'}`}>
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-gray-900">{p.name}</span>
-                        {p.id === billing?.plan_id && <Badge variant="info">Current</Badge>}
+                  {plans.map(p => {
+                    const isCurrent = p.id === billing?.plan_id;
+                    const isSelecting = selectingPlan === p.id;
+                    return (
+                      <div key={p.id} className={`rounded-xl border p-4 space-y-2 ${isCurrent ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200'}`}>
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-gray-900">{p.name}</span>
+                          {isCurrent && <Badge variant="info">Current</Badge>}
+                        </div>
+                        <p className="text-2xl font-bold text-gray-900">{fmt(p.base_fee)}<span className="text-sm font-normal text-gray-500">/mo</span></p>
+                        <p className="text-xs text-gray-500">{p.description}</p>
+                        {!isCurrent && (
+                          <button
+                            onClick={() => handleSelectPlan(p.id)}
+                            disabled={!!selectingPlan}
+                            className="mt-2 w-full flex items-center justify-center gap-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium py-2 px-3 transition-colors"
+                          >
+                            {isSelecting ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Selecting…</> : 'Select Plan'}
+                          </button>
+                        )}
                       </div>
-                      <p className="text-2xl font-bold text-gray-900">{fmt(p.base_fee)}<span className="text-sm font-normal text-gray-500">/mo</span></p>
-                      <p className="text-xs text-gray-500">{p.description}</p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </Card>
             </>

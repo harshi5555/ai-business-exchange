@@ -61,6 +61,25 @@ router.get('/invoices', async (req: Request, res: Response) => {
   } catch { res.status(500).json({ success: false, error: 'Failed to load invoices' }); }
 });
 
+// PUT /api/billing/my/plan — partner self-selects a plan
+router.put('/my/plan', async (req: Request, res: Response) => {
+  const partnerId = req.headers['x-partner-id'] as string;
+  if (!partnerId) { res.status(401).json({ success: false, error: 'Unauthorized' }); return; }
+  const { plan_id } = req.body as { plan_id: string };
+  if (!plan_id) { res.status(400).json({ success: false, error: 'plan_id is required' }); return; }
+  try {
+    const plans = await svc.listPlans();
+    if (!plans.find(p => p.id === plan_id && p.is_active)) {
+      res.status(400).json({ success: false, error: 'Invalid or inactive plan' });
+      return;
+    }
+    const billing = await svc.assignPlan(partnerId, { plan_id });
+    res.json({ success: true, data: billing });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err instanceof Error ? err.message : 'Failed to select plan' });
+  }
+});
+
 // ─── Admin routes (require admin scope) ─────────────────────────────────────
 router.use((req: Request, res: Response, next) => {
   if (!req.path.startsWith('/admin')) return next();

@@ -199,6 +199,7 @@ export const billingApi = {
   getLLMUsage: (period?: string) => api.get(`/api/billing/llm-usage${period ? `?period=${period}` : ''}`),
   getInvoices: () => api.get('/api/billing/invoices'),
   getPlans: () => api.get('/api/billing/plans'),
+  selectPlan: (planId: string) => api.put('/api/billing/my/plan', { plan_id: planId }),
   // Admin
   adminGetPlans: () => api.get('/api/billing/admin/plans'),
   adminCreatePlan: (data: object) => api.post('/api/billing/admin/plans', data),
