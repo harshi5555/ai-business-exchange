@@ -76,6 +76,12 @@ else
   echo "       flyctl logs -a $APP_NAME"
 fi
 
+if curl -fsSL --retry 3 --retry-delay 5 --max-time 15 "$APP_URL/.well-known/agent.json" > /dev/null 2>&1; then
+  echo "  ✓ Exchange Agent card reachable"
+else
+  echo "  ⚠  Agent card not responding yet ($APP_URL/.well-known/agent.json)"
+fi
+
 echo ""
 echo "═══════════════════════════════════════════════════════════════"
 echo "✅ Deploy complete!"

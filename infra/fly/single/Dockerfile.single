@@ -15,6 +15,7 @@ COPY packages/shared-types/package.json  ./packages/shared-types/
 COPY packages/shared-utils/package.json  ./packages/shared-utils/
 COPY packages/logger/package.json        ./packages/logger/
 COPY packages/database/package.json      ./packages/database/
+COPY packages/a2a-sdk/package.json       ./packages/a2a-sdk/
 COPY apps/gateway/package.json             ./apps/gateway/
 COPY apps/auth-service/package.json        ./apps/auth-service/
 COPY apps/partner-service/package.json     ./apps/partner-service/
@@ -23,6 +24,7 @@ COPY apps/integration-service/package.json ./apps/integration-service/
 COPY apps/mapping-engine/package.json      ./apps/mapping-engine/
 COPY apps/agent-orchestrator/package.json  ./apps/agent-orchestrator/
 COPY apps/billing-service/package.json     ./apps/billing-service/
+COPY apps/exchange-agent/package.json      ./apps/exchange-agent/
 COPY apps/partner-portal/package.json      ./apps/partner-portal/
 
 RUN npm install --legacy-peer-deps
@@ -83,6 +85,14 @@ RUN npm run build -w apps/agent-orchestrator
 COPY apps/billing-service/src          ./apps/billing-service/src
 COPY apps/billing-service/tsconfig.json ./apps/billing-service/tsconfig.json
 RUN npm run build -w apps/billing-service
+
+COPY packages/a2a-sdk/src              ./packages/a2a-sdk/src
+COPY packages/a2a-sdk/tsconfig.json    ./packages/a2a-sdk/tsconfig.json
+RUN npm run build -w packages/a2a-sdk
+
+COPY apps/exchange-agent/src           ./apps/exchange-agent/src
+COPY apps/exchange-agent/tsconfig.json ./apps/exchange-agent/tsconfig.json
+RUN npm run build -w apps/exchange-agent
 
 # ── Next.js portal (NEXT_PUBLIC_API_URL="" → relative paths via nginx) ────────
 COPY apps/partner-portal/src            ./apps/partner-portal/src
