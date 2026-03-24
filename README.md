@@ -4,6 +4,11 @@ Business Exchange is a B2B integration platform where partners can register, dis
 
 The platform uses an AI-powered mapping engine to normalize partner payloads into a canonical data model (CDM) and reshape them into each receiver's preferred format.
 
+Partners can connect to the platform in two ways:
+
+- **Human portal path** — partners self-register through the web UI, configure schemas and webhooks, and manage integrations manually
+- **Agent-to-agent path** — a partner's own AI agent (connected to their internal ERP, CRM, or WMS) can autonomously discover, negotiate, and establish a full integration with the platform using the [A2A protocol](https://google.github.io/A2A) and [Model Context Protocol (MCP)](https://modelcontextprotocol.io). No human interaction is required on either side.
+
 ## What this repository contains
 
 This is a Turborepo monorepo with:
@@ -17,35 +22,72 @@ This is a Turborepo monorepo with:
 
 - [Architecture](#architecture)
 - [Core message flow](#core-message-flow)
+- [Partner integration paths](#partner-integration-paths)
 - [Services and ports](#services-and-ports)
 - [Repository layout](#repository-layout)
 - [Getting started](#getting-started)
 - [Environment configuration](#environment-configuration)
 - [Development workflows](#development-workflows)
 - [Agent orchestrator](#agent-orchestrator)
+- [Agent-to-agent integration](#agent-to-agent-integration)
 - [AI mapping and visibility model](#ai-mapping-and-visibility-model)
 - [Deployment](#deployment)
 - [Demo mode](#demo-mode)
 - [Operational notes](#operational-notes)
+- [Testing the A2A / MCP integration](#testing-the-a2a--mcp-integration)
 - [Troubleshooting](#troubleshooting)
 
 ## Architecture
 
 All external traffic enters through the API gateway. The gateway validates JWTs, applies rate limiting, and reverse-proxies requests to downstream services.
 
-```text
-Client / Partner Portal
-        |
-        v
-  API Gateway (:3000 / :11000)
-        |
-        +--> Auth Service
-        +--> Partner Service
-        +--> Subscription Service
-        +--> Integration Service
-        +--> Mapping Engine
-        +--> Agent Orchestrator
-        +--> Billing Service
+```mermaid
+graph TB
+    subgraph Clients["Clients"]
+        PP["🖥️ Partner Portal<br/>:3100"]
+        PA["🤖 Partner AI Agent<br/>(external)"]
+    end
+
+    subgraph Gateway["API Gateway  :3000"]
+        GW["Gateway<br/>JWT auth · rate limiting · reverse proxy"]
+    end
+
+    subgraph CoreServices["Core Services"]
+        AUTH["Auth Service<br/>:3001"]
+        PS["Partner Service<br/>:3002"]
+        SS["Subscription Service<br/>:3003"]
+        IS["Integration Service<br/>:3004"]
+        ME["Mapping Engine<br/>:3005"]
+        AO["Agent Orchestrator<br/>:3006"]
+        BS["Billing Service<br/>:3007"]
+        EA["Exchange Agent<br/>:3008"]
+    end
+
+    subgraph Data["Data"]
+        PG[("PostgreSQL<br/>:5432")]
+        LLM["☁️ LLM Provider<br/>Azure / OpenAI / Compatible"]
+    end
+
+    PP -->|JWT / HTTPS| GW
+    PA -->|A2A · MCP · x-api-key| GW
+
+    GW --> AUTH
+    GW --> PS
+    GW --> SS
+    GW --> IS
+    GW --> ME
+    GW --> AO
+    GW --> BS
+    GW -->|"/.well-known  /a2a  /mcp"| EA
+
+    EA -->|register partner| PS
+    EA -->|infer schema| ME
+    EA -->|subscribe| SS
+    EA -->|configure webhook| IS
+
+    AUTH & PS & SS & IS & ME & AO & BS & EA --> PG
+    ME -->|schema inference| LLM
+    EA -->|negotiation| LLM
 ```
 
 The platform is designed around a few main ideas:
@@ -55,19 +97,39 @@ The platform is designed around a few main ideas:
 - the integration service handles message routing and webhook delivery
 - the mapping engine converts partner-specific payloads through an internal CDM
 - the agent orchestrator performs retry, monitoring, drift detection, and alerting tasks
+- the exchange agent enables partner AI agents to autonomously negotiate and establish integrations over A2A and MCP without human involvement
 
 ## Core message flow
 
 When a partner sends a message, the high-level path is:
 
-1. The sender calls the gateway.
-2. The gateway authenticates the request and forwards it to the integration service.
-3. The integration service verifies there is an active subscription between sender and receiver.
-4. If schemas exist, the mapping engine attempts a two-stage transformation:
-   - sender format -> CDM
-   - CDM -> receiver format
-5. The integration service stores message state and delivers the resulting payload to the receiver webhook.
-6. Retry and monitoring agents handle failed webhook delivery attempts later if needed.
+```mermaid
+sequenceDiagram
+    participant S as Sender Partner
+    participant GW as API Gateway
+    participant IS as Integration Service
+    participant ME as Mapping Engine
+    participant R as Receiver Webhook
+    participant AO as Agent Orchestrator
+
+    S->>GW: POST /api/integrations/send<br/>(JWT + payload)
+    GW->>GW: Validate JWT, inject x-partner-id
+    GW->>IS: Forward request
+    IS->>IS: Verify active subscription<br/>sender ↔ receiver
+    IS->>ME: Transform payload<br/>sender format → CDM → receiver format
+    ME-->>IS: Mapped payload (or fallback)
+    IS->>IS: Store message (status: processing)
+    IS->>R: POST to receiver webhook
+    alt Delivery success
+        R-->>IS: 2xx
+        IS->>IS: status → delivered
+    else Delivery fails
+        R-->>IS: error / timeout
+        IS->>IS: status → failed
+        AO->>IS: Retry Agent picks up (every 2 min)
+        AO->>R: Re-attempt with backoff
+    end
+```
 
 ### Public routes
 
@@ -78,23 +140,117 @@ These routes do not require JWT authentication:
 - `POST /api/auth/login`
 - `POST /api/auth/refresh`
 - `POST /api/auth/token`
+- `GET /.well-known/agent.json` — Exchange Agent discovery card (A2A, no auth required)
+
+A2A task execution (`POST /a2a/tasks`, `/mcp`) requires an API key passed as `x-api-key`.
+
+## Partner integration paths
+
+Partners can connect to the platform through two independent paths. Both are fully supported and can coexist.
+
+### Human portal path
+
+```mermaid
+flowchart LR
+    A["Partner\nregisters\nin portal"] --> B["Admin\nreviews &\napproves"]
+    B --> C["Partner configures\nschemas & webhook\nin Settings"]
+    C --> D["Partner sends &\nreceives messages\nvia gateway API"]
+```
+
+1. Partner navigates to the portal and self-registers (`POST /api/partners`).
+2. Admin reviews and approves the application.
+3. Partner configures schemas, mapping rules, and webhook delivery settings through the UI.
+4. Partner sends and receives messages via the gateway API.
+
+### Agent-to-agent path
+
+```mermaid
+sequenceDiagram
+    participant PA as Partner AI Agent
+    participant GW as Gateway
+    participant EA as Exchange Agent
+    participant ME as Mapping Engine
+    participant PS as Partner Service
+
+    PA->>GW: GET /.well-known/agent.json
+    GW-->>PA: Agent Card (skills, auth, endpoint)
+
+    PA->>GW: POST /a2a/tasks<br/>x-api-key · "We produce orders in JSON..."
+    GW->>EA: Forward
+    EA->>EA: Create session (state: discovery)
+    EA-->>PA: Task accepted · state: working<br/>"Please send a sample payload"
+
+    PA->>GW: POST /a2a/tasks/:id/send<br/>{ sample payload }
+    GW->>EA: Forward
+    EA->>ME: Infer schema + mapping rules
+    ME-->>EA: Mapping rules (confidence scores)
+    EA-->>PA: state: input-required<br/>"Proposed mapping. Confirm + provide webhook URL"
+
+    PA->>GW: POST /a2a/tasks/:id/send<br/>{ accept: true, webhookUrl }
+    GW->>EA: Forward
+    EA->>PS: Register partner
+    PS-->>EA: partnerId + credentials
+    EA-->>PA: state: completed<br/>{ partnerId, apiKey, subscription }
+```
+
+A partner's AI agent (running in their own infrastructure, connected to their ERP, CRM, or WMS) can autonomously complete the same onboarding steps through machine-to-machine protocols:
+
+1. Partner agent discovers the Exchange Agent via `GET /.well-known/agent.json`.
+2. Partner agent sends a task to `POST /a2a/tasks` describing integration intent.
+3. Exchange Agent (backed by an LLM-driven negotiation engine) requests a sample payload.
+4. Exchange Agent runs AI schema inference, proposes mapping rules and available subscriptions.
+5. Partner agent accepts or counter-proposes terms.
+6. Exchange Agent provisions the partner account, configures the webhook, and issues credentials.
+7. Integration goes live with no human steps on either side.
+
+The agent path calls the same internal service APIs as the human portal. No existing behavior is changed.
 
 ## Services and ports
 
-| Component | Dev Port | Docker Port | Responsibility |
-| --- | --- | --- | --- |
-| Gateway | `3000` | `11000` | Single entry point, JWT auth, rate limiting, reverse proxy |
-| Auth Service | `3001` | `11001` | Login, refresh tokens, OAuth2, API keys |
-| Partner Service | `3002` | `11002` | Partner registration, profiles, KYB approval, branding |
-| Subscription Service | `3003` | `11003` | Discovery and subscription lifecycle |
-| Integration Service | `3004` | `11004` | Message routing, storage, delivery, status tracking |
-| Mapping Engine | `3005` | `11005` | AI schema inference and transformation |
-| Agent Orchestrator | `3006` | `11006` | Monitor, retry, schema-change, and alert agents |
-| Billing Service | `3007` | `11010` | Usage tracking and billing |
-| Partner Portal | `3100` | `11009` | Next.js UI for partners and admins |
-| PostgreSQL | `5432` | `11007` | Primary database |
+| Component | Port | Responsibility |
+| --- | --- | --- |
+| Gateway | `3000` | Single entry point, JWT auth, rate limiting, reverse proxy |
+| Auth Service | `3001` | Login, refresh tokens, OAuth2, API keys |
+| Partner Service | `3002` | Partner registration, profiles, KYB approval, branding |
+| Subscription Service | `3003` | Discovery and subscription lifecycle |
+| Integration Service | `3004` | Message routing, storage, delivery, status tracking |
+| Mapping Engine | `3005` | AI schema inference and transformation |
+| Agent Orchestrator | `3006` | Monitor, retry, schema-change, and alert agents |
+| Billing Service | `3007` | Usage tracking and billing |
+| Exchange Agent | `3008` | A2A + MCP server; partner agent negotiation and autonomous onboarding |
+| Partner Portal | `3100` | Next.js UI for partners and admins |
+| PostgreSQL | `5432` | Primary database |
 
 ## Repository layout
+
+```mermaid
+graph LR
+    subgraph apps["apps/  — deployable services"]
+        GW2["gateway<br/>:3000"]
+        AU["auth-service<br/>:3001"]
+        PA2["partner-service<br/>:3002"]
+        SU["subscription-service<br/>:3003"]
+        IN["integration-service<br/>:3004"]
+        MA["mapping-engine<br/>:3005"]
+        AG["agent-orchestrator<br/>:3006"]
+        EX["exchange-agent<br/>:3008  ★ A2A/MCP"]
+        BI["billing-service<br/>:3007"]
+        PO["partner-portal<br/>:3100  Next.js"]
+    end
+
+    subgraph packages["packages/  — shared libraries"]
+        ST["@bx/shared-types"]
+        SU2["@bx/shared-utils"]
+        DB["@bx/database"]
+        SDK["@bx/a2a-sdk  ★ new"]
+        LG["@bx/logger"]
+    end
+
+    GW2 & AU & PA2 & SU & IN & MA & AG & EX & BI --> ST
+    GW2 & AU & PA2 & SU & IN & MA & AG & EX & BI --> LG
+    PA2 & SU & IN & MA & AG & EX & BI & AU --> DB
+    EX --> SDK
+```
 
 ```text
 business-exchange/
@@ -106,12 +262,14 @@ business-exchange/
 │   ├── integration-service/
 │   ├── mapping-engine/
 │   ├── agent-orchestrator/
+│   ├── exchange-agent/            ← A2A + MCP server for partner agent onboarding
 │   ├── billing-service/
 │   └── partner-portal/
 ├── packages/
 │   ├── shared-types/
 │   ├── shared-utils/
 │   ├── database/
+│   ├── a2a-sdk/                   ← A2A and MCP protocol types (shared)
 │   └── logger/
 ├── infra/
 ├── docker-compose.yml
@@ -124,6 +282,7 @@ business-exchange/
 - `@bx/shared-types`: shared TypeScript contracts such as `ApiResponse<T>`, `Partner`, `Message`, and subscription models
 - `@bx/shared-utils`: IDs, webhook signing, hashing, backoff, and other shared helpers
 - `@bx/database`: PostgreSQL connection and migrations
+- `@bx/a2a-sdk`: A2A and MCP protocol types — `AgentCard`, `Task`, `TaskState`, `MCPTool`, `MCPToolResult`
 - `@bx/logger`: Pino logger factory
 
 ## Getting started
@@ -151,8 +310,8 @@ docker compose up -d --build
 
 Then open:
 
-- Partner Portal: `http://localhost:11009`
-- Gateway: `http://localhost:11000`
+- Partner Portal: `http://localhost:3100`
+- Gateway: `http://localhost:3000`
 
 To stop everything:
 
@@ -187,8 +346,8 @@ cd packages/database && npm run db:migrate:down
 
 Each backend service follows the same service pattern and exposes a `/health` endpoint. The most important local checks are:
 
-- gateway: `http://localhost:11000/health`
-- partner portal: `http://localhost:11009`
+- gateway: `http://localhost:3000/health`
+- partner portal: `http://localhost:3100`
 
 ## Environment configuration
 
@@ -413,6 +572,103 @@ Because runtime state is held in memory:
 - "currently running" and "total runs since start" reset when the `agent-orchestrator` service restarts
 - persisted `agent_events` remain in PostgreSQL and survive restarts
 
+## Agent-to-agent integration
+
+The `exchange-agent` service gives the platform its own AI agent identity. Partner-owned agents (connected to internal ERP, CRM, WMS, or any system) can use standard agent protocols to discover, negotiate with, and integrate into the platform entirely autonomously.
+
+### Protocols supported
+
+| Protocol | Transport | Purpose |
+| --- | --- | --- |
+| A2A (Google Agent-to-Agent) | HTTPS + SSE | Multi-turn task negotiation between agents |
+| MCP (Model Context Protocol) | Streamable HTTP | LLM tool calls against platform capabilities |
+
+### Endpoints
+
+| Route | Auth | Description |
+| --- | --- | --- |
+| `GET /.well-known/agent.json` | None | Agent Card — partner agents discover this to learn skills, auth requirements, and endpoints |
+| `POST /a2a/tasks` | API key | Submit a new negotiation task (e.g. "I want to integrate") |
+| `GET /a2a/tasks/:id` | API key | Poll task status and read the agent's latest response |
+| `POST /a2a/tasks/:id/send` | API key | Continue a multi-turn negotiation (send sample payload, accept proposal, etc.) |
+| `POST /mcp` | API key | MCP tool call endpoint (Streamable HTTP, 2025-03-26 spec) |
+
+### MCP tools available to partner agents
+
+| Tool | What it does |
+| --- | --- |
+| `get_platform_info` | Returns platform capabilities and supported formats |
+| `register_partner` | Creates a partner account |
+| `discover_subscriptions` | Lists available data feeds |
+| `submit_schema_sample` | Sends a sample payload and receives an AI-generated mapping proposal |
+| `confirm_mapping` | Accepts or rejects a proposed mapping rule set |
+| `request_subscription` | Subscribes to a data feed |
+| `configure_webhook` | Sets the delivery endpoint for inbound messages |
+| `get_onboarding_status` | Returns current onboarding state and any pending steps |
+| `get_integration_health` | Returns message delivery statistics |
+
+### Negotiation state machine
+
+Each A2A session progresses through the following states:
+
+```mermaid
+stateDiagram-v2
+    [*] --> discovery : Partner agent sends first task
+
+    discovery --> schema_submitted : Partner sends sample payload
+    schema_submitted --> mapping_proposed : AI infers schema & rules
+
+    mapping_proposed --> terms_negotiated : Partner accepts mapping
+    mapping_proposed --> counter_offered : Partner rejects / proposes changes
+    counter_offered --> mapping_proposed : Exchange Agent revises proposal
+
+    terms_negotiated --> provisioning : Partner provides webhook URL
+    provisioning --> active : Partner account provisioned ✅
+
+    mapping_proposed --> abandoned : No response (timeout)
+    terms_negotiated --> abandoned : No response (timeout)
+    provisioning --> failed : Registration or webhook error
+
+    active --> [*]
+    failed --> [*]
+    abandoned --> [*]
+```
+
+Session state is stored in the `agent_sessions` table. Sessions that stall are escalated to the admin review queue in the portal under **A2A Sessions**.
+
+### LLM usage
+
+The negotiation engine uses the platform-configured LLM (same provider and credentials set in `Admin Settings`). No separate LLM configuration is needed for the exchange agent.
+
+### Authentication for partner agents
+
+- **Agent Card discovery** (`/.well-known/agent.json`) is public — no credentials required
+- **Task and MCP endpoints** require an API key in the `x-api-key` request header
+- API keys can be pre-issued to trusted partner agents or generated during the negotiation itself
+
+### How it relates to the existing architecture
+
+The exchange agent is a purely additive service. It calls the same internal APIs as the partner portal:
+
+| Exchange agent action | Internal call |
+| --- | --- |
+| Register partner | `POST partner-service/api/partners` |
+| Infer schema | `POST mapping-engine/api/mappings/schemas/register` |
+| List subscriptions | `GET subscription-service/api/subscriptions` |
+| Subscribe | `POST subscription-service/api/subscriptions` |
+| Configure webhook | `PUT integration-service/api/integrations/...` |
+
+No existing services, database schemas, or APIs are modified.
+
+### Viewing A2A sessions in the portal
+
+Admins and partners can view negotiation sessions under **A2A Sessions** in the partner portal. The page shows:
+
+- current negotiation state
+- the full conversation transcript between the partner agent and the Exchange Agent
+- proposed mapping rules and subscriptions
+- a button to manually approve or reject stalled sessions
+
 ## AI mapping and visibility model
 
 ### Canonical Data Model (CDM)
@@ -622,6 +878,8 @@ The agent orchestrator runs four scheduled agents:
 | Schema Change | Detects payload drift relative to registered schemas |
 | Alert | Surfaces dead-letter and schema-drift issues |
 
+The exchange agent runs as a separate service and handles on-demand agent-to-agent negotiation sessions independently of the cron-based agents above.
+
 ### API response shape
 
 Services return shared response types from `@bx/shared-types`.
@@ -644,13 +902,186 @@ import { generateId } from '@bx/shared-utils';
 import type { ApiResponse } from '@bx/shared-types';
 ```
 
+## Testing the A2A / MCP integration
+
+### Port reference
+
+Ports differ between dev and Docker Compose modes. Set these variables once before running any of the commands below.
+
+**Dev mode (`npm run dev` + `docker compose up -d postgres`) or Docker Compose (`docker compose up -d --build`)**
+
+```bash
+export GW="http://localhost:3000"
+export PORTAL="http://localhost:3100"
+```
+
+### Prerequisites
+
+1. **Start the stack**
+
+   *Dev mode* — Postgres must run in Docker; all other services run via Turbo:
+   ```bash
+   docker compose up -d postgres
+   npm install                        # pick up new packages (a2a-sdk, exchange-agent)
+   npm run build -w packages/a2a-sdk  # build shared protocol types first
+   npm run dev                        # starts all services including exchange-agent
+   ```
+
+   *Docker Compose* — builds and starts everything:
+   ```bash
+   docker compose up -d --build
+   ```
+
+2. **Apply the agent_sessions migration** (only needed once, if your database already existed before this migration was added)
+
+   *Dev mode:*
+   ```bash
+   DATABASE_URL=postgresql://bx_user:bx_password@localhost:5432/business_exchange \
+     npm run db:migrate -w packages/database
+   ```
+
+   *Docker Compose:*
+   ```bash
+   docker exec -i bx-postgres psql -U bx_user -d business_exchange \
+     < packages/database/migrations/007_agent_sessions.sql
+   ```
+
+   Verify:
+   ```bash
+   docker exec bx-postgres psql -U bx_user -d business_exchange -c "\dt agent_sessions"
+   ```
+
+3. **Verify exchange-agent is healthy**
+
+   ```bash
+   curl $GW/health
+   # gateway → {"status":"ok","service":"gateway"}
+
+   curl http://localhost:3008/health
+   # exchange-agent direct → {"status":"ok","service":"exchange-agent"}
+   ```
+
+4. **Configure a platform LLM** in the portal under **Admin Settings**. Without it the negotiation engine falls back to a static prompt.
+
+### Step 1 — Discover the Agent Card (no auth)
+
+```bash
+curl $GW/.well-known/agent.json | jq .
+```
+
+Expected: Agent Card JSON listing three skills — `partner_onboarding`, `schema_mapping`, and `subscription_discovery`.
+
+### Step 2 — Obtain an API key
+
+1. Open `$PORTAL` in your browser and sign in as any demo partner (e.g. `edi@carebridge-demo.io` / `Demo@1234`)
+2. Go to **Settings** in the sidebar and scroll to the **API Keys** section at the bottom
+3. Click **Generate New API Key**
+4. Copy the key — it starts with `bx_` and is shown only once
+
+```bash
+export API_KEY="bx_<paste your key here>"
+```
+
+> If you lose a key, revoke it from the same Settings page and generate a new one.
+
+### Step 3 — Start an A2A negotiation task
+
+```bash
+curl -X POST $GW/a2a/tasks \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: $API_KEY" \
+  -d '{
+    "skill": "partner_onboarding",
+    "message": {
+      "role": "user",
+      "parts": [{ "type": "text", "text": "Hi, we are Acme Corp. We produce purchase orders in JSON from our ERP and want to receive invoice confirmations. Can you onboard us?" }]
+    }
+  }' | jq .
+```
+
+Note the `id` (task ID) in the response.
+
+### Step 4 — Continue the negotiation
+
+```bash
+export TASK_ID="<id from step 3>"
+
+# Send a sample payload
+curl -X POST $GW/a2a/tasks/$TASK_ID/send \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: $API_KEY" \
+  -d '{
+    "message": {
+      "role": "user",
+      "parts": [{ "type": "text", "text": "Here is our sample: {\"poNumber\":\"PO-1001\",\"vendor\":\"MediCore\",\"items\":[{\"sku\":\"IBUP-200\",\"qty\":500,\"price\":2.50}],\"deliveryDate\":\"2026-04-01\"}" }]
+    }
+  }' | jq .
+
+# Poll status at any time
+curl $GW/a2a/tasks/$TASK_ID \
+  -H "x-api-key: $API_KEY" | jq .result.status
+```
+
+The session progresses through states: `discovery → schema_submitted → mapping_proposed → terms_negotiated → provisioning → active`.
+
+### Step 5 — Test MCP tools directly
+
+```bash
+# Initialize — no auth required
+curl -X POST $GW/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | jq .
+
+# List available tools
+curl -X POST $GW/mcp \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: $API_KEY" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' | jq '.result.tools[].name'
+
+# Call a tool directly
+curl -X POST $GW/mcp \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: $API_KEY" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 3,
+    "method": "tools/call",
+    "params": { "name": "get_platform_info", "arguments": {} }
+  }' | jq .
+```
+
+### Step 6 — View sessions in the portal
+
+Open `$PORTAL` in your browser, sign in, and click **A2A Sessions** in the sidebar. Every negotiation session is listed with its current state, partner details, and the full conversation transcript between the partner agent and the Exchange Agent.
+
+### Expected responses for key checks
+
+| Request | Expected |
+| --- | --- |
+| `GET /.well-known/agent.json` | Agent Card JSON, 3 skills, no auth required |
+| `POST /a2a/tasks` without `x-api-key` | `401 API key required` |
+| `POST /a2a/tasks` with valid key | `202` + task with `status.state: "working"` |
+| `GET /a2a/tasks/:id` | Current state + negotiation history array |
+| `POST /mcp` `initialize` | `200` + protocol version, no auth required |
+| `POST /mcp` `tools/list` without key | `401 API key required` |
+| Portal A2A Sessions page | Sessions listed with transcript and state badges |
+
 ## Troubleshooting
+
+### A2A negotiation session is stuck
+
+If a partner agent session does not progress:
+
+- check that the platform LLM is configured in `Admin Settings` (the negotiation engine uses it)
+- check exchange-agent logs: `docker compose logs -f exchange-agent` (Docker) or the Turbo dev output (dev mode)
+- review the session transcript in the portal under **A2A Sessions**
+- use the admin manual-approve action to unblock the session if the mapping and subscription proposals look correct
 
 ### The portal loads but API calls fail
 
 Check:
 
-- gateway is running on `11000`
+- gateway is running (`http://localhost:3000`)
 - `NEXT_PUBLIC_API_URL` points to the gateway
 - your auth token is present and valid
 
@@ -684,16 +1115,10 @@ If you are new to the codebase, this order works well:
 2. start the stack with Docker Compose
 3. sign in to the partner portal
 4. explore `apps/gateway`, `apps/integration-service`, and `apps/mapping-engine`
-5. inspect shared contracts in `packages/shared-types`
+5. inspect shared contracts in `packages/shared-types` and `packages/a2a-sdk`
 6. review seeded/demo flows in the partner portal
+7. explore `apps/exchange-agent` for A2A/MCP agent integration
 
 ## License / usage
 
-No license text is documented in this README. Check repository settings or add a formal license file if this project is intended for broader distribution.
-# ai-exchange
-# ai-exchange
-# ai-exchange
-# ai-exchange
-# ai-exchange
-# ai-exchange
-# ai-business-exchange
+This project is proprietary. All rights reserved by the repository owner. No license is granted for use, distribution, or modification without explicit written permission.

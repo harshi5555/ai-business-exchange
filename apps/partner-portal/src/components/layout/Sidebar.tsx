@@ -7,7 +7,7 @@ import { partnersApi, subscriptionsApi } from '@/lib/api';
 import { isAdmin, getPartnerId } from '@/lib/utils';
 import { useTheme } from '@/components/ThemeProvider';
 import {
-  LayoutDashboard, Users, Link2, Send, Cpu, Bot, LogOut, Zap, Settings, CreditCard, Building2, Network, ShieldCheck,
+  LayoutDashboard, Users, Link2, Send, Cpu, Bot, LogOut, Zap, Settings, CreditCard, Building2, Network, ShieldCheck, Workflow,
 } from 'lucide-react';
 
 import { APP_VERSION, LAST_UPDATED } from '@/lib/version';
@@ -19,6 +19,7 @@ const partnerNav = [
   { href: '/hub',            label: 'Integration Hub',   icon: Network },
   { href: '/integrations',   label: 'Messages',          icon: Send },
   { href: '/mappings',       label: 'Schema Mapping',    icon: Cpu },
+  { href: '/a2a-sessions',   label: 'A2A Sessions',      icon: Workflow },
   { href: '/billing',        label: 'Billing',           icon: CreditCard },
   { href: '/settings',       label: 'Settings',          icon: Settings },
 ];
@@ -27,6 +28,7 @@ const adminNav = [
   { href: '/dashboard',      label: 'Dashboard',         icon: LayoutDashboard },
   { href: '/partners',       label: 'Partners',          icon: Users },
   { href: '/integrations',   label: 'Messages',          icon: Send },
+  { href: '/a2a-sessions',   label: 'A2A Sessions',      icon: Workflow },
   { href: '/admin',          label: 'Admin Settings',    icon: Settings },
   { href: '/admin/billing',  label: 'Billing Admin',     icon: CreditCard },
   { href: '/agents',         label: 'Agent Monitor',     icon: Bot },

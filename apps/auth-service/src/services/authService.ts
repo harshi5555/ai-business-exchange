@@ -50,7 +50,7 @@ export class AuthService {
     return this.issueTokenPair(row.partner_id, row.scopes);
   }
 
-  async issueApiKey(partnerId: string): Promise<{ apiKey: string }> {
+  async issueApiKey(partnerId: string): Promise<{ apiKey: string; keyId: string }> {
     const apiKey = generateApiKey();
     const keyHash = hashApiKey(apiKey);
     const keyId = generateId();
@@ -58,7 +58,15 @@ export class AuthService {
       'INSERT INTO api_keys (id, partner_id, key_hash, created_at) VALUES ($1, $2, $3, NOW())',
       [keyId, partnerId, keyHash]
     );
-    return { apiKey }; // Return plain key once — never stored
+    return { apiKey, keyId }; // Return plain key once — never stored
+  }
+
+  async listApiKeys(partnerId: string): Promise<Array<{ id: string; createdAt: string }>> {
+    const { rows } = await this.db.query<{ id: string; created_at: Date }>(
+      `SELECT id, created_at FROM api_keys WHERE partner_id = $1 AND revoked_at IS NULL ORDER BY created_at DESC`,
+      [partnerId],
+    );
+    return rows.map((r) => ({ id: r.id, createdAt: r.created_at.toISOString() }));
   }
 
   async revokeApiKey(partnerId: string, keyId: string): Promise<void> {

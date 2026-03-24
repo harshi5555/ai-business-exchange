@@ -48,6 +48,7 @@ APPS=(
   bx-mapping-engine
   bx-agent-orchestrator
   bx-billing-service
+  bx-exchange-agent
   bx-partner-portal
 )
 
@@ -161,12 +162,23 @@ flyctl secrets set -a bx-gateway \
   NODE_ENV="production"
 
 echo ""
-echo "▶ Running DB migration..."
+echo "▶ Setting exchange-agent secrets..."
+flyctl secrets set -a bx-exchange-agent \
+  DATABASE_URL="$DATABASE_URL" \
+  JWT_SECRET="$JWT_SECRET" \
+  NODE_ENV="production"
+echo "  ✓ bx-exchange-agent secrets set"
+
+echo ""
+echo "▶ Running DB migrations..."
 DB_NAME=$(echo "$DATABASE_URL" | grep -oE '/[^/?]+(\?|$)' | head -1 | tr -d '/?' || echo "postgres")
 DB_NAME="${DB_NAME:-postgres}"
-{ cat packages/database/migrations/001_schema.sql; printf '\\q\n'; } \
-  | flyctl postgres connect --app bx-postgres --database "$DB_NAME" || true
-echo "  ✓ Migrations done (database: $DB_NAME)"
+for migration in packages/database/migrations/*.sql; do
+  echo "  Applying $migration..."
+  { cat "$migration"; printf '\\q\n'; } \
+    | flyctl postgres connect --app bx-postgres --database "$DB_NAME" || true
+done
+echo "  ✓ All migrations done (database: $DB_NAME)"
 
 echo ""
 echo "────────────────────────────────────────────────────────────────"

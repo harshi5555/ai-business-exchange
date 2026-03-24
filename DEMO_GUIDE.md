@@ -11,6 +11,26 @@ This demo is designed around a single, believable B2B healthcare supply-chain st
 
 ## Core use cases
 
+### 0. Agent-to-agent partner onboarding (A2A / MCP)
+
+A new partner — say, a regional pharmacy wholesaler — wants to connect to the exchange. Instead of a human filling in the portal, their internal AI agent (connected to their order management system) autonomously negotiates and completes the integration.
+
+What happens:
+
+1. The partner agent fetches `GET /.well-known/agent.json` to discover the Exchange Agent and its capabilities.
+2. The partner agent sends a task: _"We produce purchase orders in JSON and want to receive invoice confirmations. Here is a sample payload."_
+3. The Exchange Agent infers the schema, generates mapping rules with confidence scores, and proposes relevant subscriptions.
+4. The partner agent accepts the proposal and supplies a webhook URL.
+5. The Exchange Agent provisions the account, activates the subscription, and issues API credentials.
+6. The integration is live — no human action required on either side.
+
+Why it demos well:
+
+- shows the platform working as an AI-native integration hub, not just a data pipe
+- contrasts with the traditional portal path to highlight automation value
+- demonstrates schema inference and subscription matching in a live negotiation loop
+- realistic for enterprises that already run their own AI agents against internal systems
+
 ### 1. Pharmacy replenishment
 
 CareBridge sends a standard `X12 850 Purchase Order` to MediCore for high-volume pharmacy products like ibuprofen, cold-and-flu relief, and vitamin D.
@@ -52,6 +72,51 @@ Why it demos well:
 - gives a strong business value narrative around working capital
 
 ## Recommended end-to-end walkthrough
+
+### Step 0: Show agent-to-agent onboarding (optional, high-impact opener)
+
+**Prerequisites for this step:**
+- Stack is running
+- A platform LLM is configured in **Admin Settings**
+- An API key is ready — sign in as any demo partner (e.g. `edi@carebridge-demo.io` / `Demo@1234`), go to **Settings**, scroll to **API Keys**, click **Generate New API Key**, and copy the `bx_...` value
+
+Set your environment variables (same port for dev and Docker):
+
+```bash
+export GW="http://localhost:3000"
+export PORTAL="http://localhost:3100"
+```
+
+Open a terminal or API client and show the Exchange Agent Card:
+
+```bash
+curl $GW/.well-known/agent.json | jq .
+```
+
+Walk through the card: skills listed, auth requirements, task endpoint.
+
+Then show a partner agent submitting an onboarding task (can be pre-scripted):
+
+```bash
+export API_KEY="bx_<key from Settings → API Keys>"
+
+curl -X POST $GW/a2a/tasks \
+  -H "x-api-key: $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "skill": "partner_onboarding",
+    "message": {
+      "role": "user",
+      "parts": [{ "type": "text", "text": "We are a regional pharmacy wholesaler. We produce purchase orders in JSON from our ERP and want to receive invoice confirmations. Here is a sample: {\"poNumber\":\"PO-1001\",\"items\":[{\"sku\":\"IBUP-200\",\"qty\":500}]}" }]
+    }
+  }' | jq .
+```
+
+Switch to the partner portal **A2A Sessions** page and show the negotiation in progress — the Exchange Agent's mapping proposal, the proposed subscription, and the moment the session reaches `ACTIVE`.
+
+Suggested narration:
+
+> The platform doesn't just wait for a human to fill in a form. A partner's own AI agent can find us, negotiate the integration terms, and go live — in minutes, without any manual steps.
 
 ### Step 1: Start in CareBridge
 
@@ -131,6 +196,11 @@ Suggested narration:
 - structured `XML invoice` for billing
 - `CSV remittance advice` for settlement confirmation
 
+## A2A / MCP protocols used
+
+- **A2A (Google Agent-to-Agent)** for multi-turn agent negotiation and task lifecycle
+- **MCP (Model Context Protocol, Streamable HTTP)** for LLM tool calls against platform capabilities
+
 ## Suggested demo storyline in one sentence
 
 CareBridge orders OTC inventory from MediCore, MediCore books GlobalTrade to deliver it, CareBridge receives shipment and invoice visibility, and NexusPay finances the receivable.
@@ -141,3 +211,4 @@ CareBridge orders OTC inventory from MediCore, MediCore books GlobalTrade to del
 - Multiple standards and formats in a single flow
 - Shared references across order, shipment, invoice, and settlement
 - Clear value for both operations teams and finance teams
+- Partners can onboard via the human portal **or** via their own AI agent using A2A/MCP — both paths are fully supported
