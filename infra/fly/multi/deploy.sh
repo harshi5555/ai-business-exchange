@@ -188,9 +188,12 @@ log "Running DB migrations"
 # Extract db name from DATABASE_URL (e.g. postgres://user:pass@host/bxdb → bxdb)
 DB_NAME=$(echo "$DB_URL" | grep -oE '/[^/?]+(\?|$)' | head -1 | tr -d '/?' || echo "postgres")
 DB_NAME="${DB_NAME:-postgres}"
-{ cat packages/database/migrations/001_schema.sql; printf '\\q\n'; } \
-  | flyctl postgres connect --app bx-postgres --database "$DB_NAME" || true   # idempotent
-ok "Migrations done (database: $DB_NAME)"
+for migration in packages/database/migrations/*.sql; do
+  log "  Applying $migration"
+  { cat "$migration"; printf '\\q\n'; } \
+    | flyctl postgres connect --app bx-postgres --database "$DB_NAME" || true   # idempotent
+done
+ok "All migrations done (database: $DB_NAME)"
 
 # ── 2. Backend services in parallel ──────────────────────────────────────────
 log "Deploying backend services in parallel"
@@ -204,6 +207,7 @@ BACKEND_SERVICES=(
   "bx-mapping-engine:apps/mapping-engine/fly.toml"
   "bx-agent-orchestrator:apps/agent-orchestrator/fly.toml"
   "bx-billing-service:apps/billing-service/fly.toml"
+  "bx-exchange-agent:apps/exchange-agent/fly.toml"
 )
 
 for entry in "${BACKEND_SERVICES[@]}"; do
@@ -248,18 +252,23 @@ smoke() {
   fi
 }
 
-smoke "https://bx-gateway.fly.dev/health"  "gateway"
-smoke "https://bx-partner-portal.fly.dev/" "partner-portal"
+smoke "https://bx-gateway.fly.dev/health"                      "gateway"
+smoke "https://bx-exchange-agent.fly.dev/health"               "exchange-agent"
+smoke "https://bx-exchange-agent.fly.dev/.well-known/agent.json" "agent-card"
+smoke "https://bx-partner-portal.fly.dev/"                     "partner-portal"
 
 echo ""
 echo "────────────────────────────────────────────────────────────────"
 echo "✅ Deploy complete!"
 echo ""
-echo "   Gateway: https://bx-gateway.fly.dev"
-echo "   Portal:  https://bx-partner-portal.fly.dev"
+echo "   Gateway:        https://bx-gateway.fly.dev"
+echo "   Exchange Agent: https://bx-exchange-agent.fly.dev"
+echo "   Agent Card:     https://bx-gateway.fly.dev/.well-known/agent.json"
+echo "   Portal:         https://bx-partner-portal.fly.dev"
 echo ""
 echo "Useful commands:"
 echo "  flyctl logs -a bx-gateway"
+echo "  flyctl logs -a bx-exchange-agent"
 echo "  flyctl status -a bx-partner-service"
-echo "  bash infra/fly/deploy.sh --app bx-gateway   # redeploy single service"
+echo "  bash infra/fly/deploy.sh --app bx-exchange-agent   # redeploy single service"
 echo "────────────────────────────────────────────────────────────────"
