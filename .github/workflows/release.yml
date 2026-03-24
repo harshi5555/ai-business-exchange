@@ -1,0 +1,106 @@
+name: Release — Manual Deploy to Fly.io
+
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_mode:
+        description: "Deployment mode"
+        required: true
+        default: "multi"
+        type: choice
+        options:
+          - multi
+          - single
+      service:
+        description: "Single service to redeploy (multi-host only). Leave blank to deploy all."
+        required: false
+        default: ""
+        type: choice
+        options:
+          - ""
+          - bx-gateway
+          - bx-partner-portal
+          - bx-auth-service
+          - bx-partner-service
+          - bx-subscription-service
+          - bx-integration-service
+          - bx-mapping-engine
+          - bx-agent-orchestrator
+          - bx-billing-service
+          - bx-exchange-agent
+
+jobs:
+  deploy:
+    name: Deploy (${{ inputs.deployment_mode }}${{ inputs.service != '' && format(' — {0}', inputs.service) || '' }})
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    concurrency:
+      group: fly-deploy-${{ inputs.deployment_mode }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # ── Create stub env files ─────────────────────────────────────────────────
+      # The deploy scripts require these files to exist. All sensitive values are
+      # passed as environment variables in the deploy steps below so they never
+      # need to be written to disk.
+      - name: Create stub env file (multi-host)
+        if: inputs.deployment_mode == 'multi'
+        run: echo "# managed by CI — secrets injected via environment variables" > infra/.env.fly.multi
+
+      - name: Create stub env file (single-host)
+        if: inputs.deployment_mode == 'single'
+        run: echo "# managed by CI — secrets injected via environment variables" > infra/.env.fly.single
+
+      # ── Deploy ──────────────────────────────────────────────────────────────
+      - name: Deploy (multi-host, all services)
+        if: inputs.deployment_mode == 'multi' && inputs.service == ''
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+          GATEWAY_URL: ${{ secrets.GATEWAY_URL || 'https://bx-gateway.fly.dev' }}
+        run: bash infra/fly/multi/deploy.sh
+
+      - name: Deploy (multi-host, single service)
+        if: inputs.deployment_mode == 'multi' && inputs.service != ''
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+          GATEWAY_URL: ${{ secrets.GATEWAY_URL || 'https://bx-gateway.fly.dev' }}
+        run: bash infra/fly/multi/deploy.sh --app "${{ inputs.service }}"
+
+      - name: Deploy (single-host)
+        if: inputs.deployment_mode == 'single'
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP_NAME: ${{ secrets.APP_NAME || 'bx-app' }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+        run: bash infra/fly/single/deploy-single.sh
