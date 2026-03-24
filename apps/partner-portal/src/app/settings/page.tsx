@@ -1,10 +1,10 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { partnersApi, mappingsApi, brandingApi, authApi, BrandingConfig } from '@/lib/api';
+import { partnersApi, mappingsApi, brandingApi, authApi, apiKeysApi, BrandingConfig } from '@/lib/api';
 import { getPartnerId, isAdmin } from '@/lib/utils';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Webhook, CheckCircle2, AlertCircle, Info, Plus, X, Palette, Lock, Cpu, Wifi } from 'lucide-react';
+import { Webhook, CheckCircle2, AlertCircle, Info, Plus, X, Palette, Lock, Cpu, Wifi, Key, Trash2, Copy } from 'lucide-react';
 import { useTheme } from '@/components/ThemeProvider';
 
 const ALL_FORMATS = ['json', 'xml', 'csv', 'edi-x12', 'edifact'];
@@ -59,6 +59,47 @@ export default function SettingsPage() {
   const [llmResult, setLlmResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [llmTestLoading, setLlmTestLoading] = useState(false);
 
+  // API Keys
+  const [apiKeys, setApiKeys]           = useState<Array<{ id: string; createdAt: string }>>([]);
+  const [newApiKey, setNewApiKey]       = useState<string | null>(null);
+  const [apiKeyLoading, setApiKeyLoading] = useState(false);
+  const [copied, setCopied]             = useState(false);
+
+  const loadApiKeys = () => {
+    if (!myId || admin) return;
+    apiKeysApi.list()
+      .then(r => setApiKeys((r.data as { data: Array<{ id: string; createdAt: string }> }).data ?? []))
+      .catch(() => {});
+  };
+
+  const generateKey = () => {
+    setApiKeyLoading(true);
+    apiKeysApi.generate()
+      .then(r => {
+        const d = (r.data as { data: { apiKey: string; keyId: string } }).data;
+        setNewApiKey(d.apiKey);
+        loadApiKeys();
+      })
+      .catch(() => {})
+      .finally(() => setApiKeyLoading(false));
+  };
+
+  const revokeKey = (id: string) => {
+    apiKeysApi.revoke(id)
+      .then(() => {
+        setApiKeys(prev => prev.filter(k => k.id !== id));
+        if (newApiKey) setNewApiKey(null);
+      })
+      .catch(() => {});
+  };
+
+  const copyKey = (key: string) => {
+    navigator.clipboard.writeText(key).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
   // Sync branding from ThemeProvider once it loads
   useEffect(() => { setBranding(themeBranding); }, [themeBranding]);
 
@@ -77,7 +118,7 @@ export default function SettingsPage() {
         setLlmApiKeySet(p.llmApiKeySet ?? false);
       })
       .catch(() => setResult({ ok: false, text: 'Failed to load profile' }))
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); loadApiKeys(); });
   }, [myId]);
 
   const toggleMessageType = (t: string) =>
@@ -577,6 +618,67 @@ export default function SettingsPage() {
           <Button onClick={saveLLM} loading={llmSaving}>Save LLM Config</Button>
         </div>
       </Card>
+      )}
+
+      {/* API Keys */}
+      {!admin && (
+        <Card>
+          <div className="flex items-center gap-2 mb-4">
+            <Key className="w-4 h-4 text-indigo-600" />
+            <h2 className="text-sm font-semibold text-gray-700">API Keys</h2>
+          </div>
+          <p className="text-xs text-gray-500 mb-4">
+            Use these keys to authenticate partner agents with the platform via A2A or MCP.
+            Pass the key in the <code className="bg-gray-100 px-1 py-0.5 rounded text-xs">x-api-key</code> request header.
+            Keys are shown once on creation — store them securely.
+          </p>
+
+          {/* Newly generated key — show once */}
+          {newApiKey && (
+            <div className="mb-4 rounded-lg bg-green-50 border border-green-200 p-3">
+              <p className="text-xs font-semibold text-green-700 mb-1 flex items-center gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5" /> New API key — copy it now, it won&apos;t be shown again
+              </p>
+              <div className="flex items-center gap-2 mt-1">
+                <code className="flex-1 text-xs font-mono bg-white border border-green-200 rounded px-2 py-1.5 break-all">{newApiKey}</code>
+                <button
+                  onClick={() => copyKey(newApiKey)}
+                  className="shrink-0 p-1.5 rounded hover:bg-green-100 transition-colors"
+                  title="Copy"
+                >
+                  {copied ? <CheckCircle2 className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4 text-green-600" />}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Existing keys list */}
+          {apiKeys.length > 0 ? (
+            <div className="space-y-2 mb-4">
+              {apiKeys.map(k => (
+                <div key={k.id} className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                  <div>
+                    <p className="text-xs font-mono text-gray-600">{k.id}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">Created {new Date(k.createdAt).toLocaleDateString()}</p>
+                  </div>
+                  <button
+                    onClick={() => revokeKey(k.id)}
+                    className="p-1.5 rounded hover:bg-red-50 hover:text-red-600 text-gray-400 transition-colors"
+                    title="Revoke key"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-gray-400 mb-4">No active API keys. Generate one below.</p>
+          )}
+
+          <Button variant="secondary" size="sm" onClick={generateKey} loading={apiKeyLoading}>
+            <Key className="w-3.5 h-3.5 mr-1.5" />Generate New API Key
+          </Button>
+        </Card>
       )}
 
       {/* Save */}

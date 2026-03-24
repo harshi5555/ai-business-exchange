@@ -16,6 +16,7 @@ kill_timeout = "10s"
   MAPPING_ENGINE_URL       = "http://bx-mapping-engine.internal:3005"
   AGENT_ORCHESTRATOR_URL   = "http://bx-agent-orchestrator.internal:3006"
   BILLING_SERVICE_URL      = "http://bx-billing-service.internal:3007"
+  EXCHANGE_AGENT_URL       = "http://bx-exchange-agent.internal:3008"
 
 [http_service]
   internal_port = 3000

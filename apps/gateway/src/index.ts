@@ -31,6 +31,9 @@ const services: Record<string, string> = {
   '/api/mappings':      process.env.MAPPING_ENGINE_URL   ?? 'http://localhost:3005',
   '/api/agents':        process.env.AGENT_ORCHESTRATOR_URL ?? 'http://localhost:3006',
   '/api/billing':       process.env.BILLING_SERVICE_URL  ?? 'http://localhost:3007',
+  '/.well-known':       process.env.EXCHANGE_AGENT_URL  ?? 'http://localhost:3008',
+  '/a2a':               process.env.EXCHANGE_AGENT_URL  ?? 'http://localhost:3008',
+  '/mcp':               process.env.EXCHANGE_AGENT_URL  ?? 'http://localhost:3008',
 };
 
 const makeProxy = (target: string, prefix: string) =>
@@ -42,8 +45,11 @@ const makeProxy = (target: string, prefix: string) =>
     pathRewrite: (path: string) => `${prefix}${path === '/' ? '' : path}`,
   });
 
-// Auth routes — no JWT required (login/register/token)
-app.use('/api/auth', makeProxy(services['/api/auth'], '/api/auth'));
+// Auth routes — public (login/refresh/token) but key-management sub-routes require JWT
+app.use('/api/auth', (req, res, next) => {
+  if (req.path.startsWith('/keys')) return authMiddleware(req, res, next);
+  return next();
+}, makeProxy(services['/api/auth'], '/api/auth'));
 
 // Partner routes — some public, others require JWT
 app.use('/api/partners', (req, res, next) => {
@@ -56,6 +62,15 @@ app.use('/api/integrations', authMiddleware, makeProxy(services['/api/integratio
 app.use('/api/mappings', authMiddleware, makeProxy(services['/api/mappings'], '/api/mappings'));
 app.use('/api/agents', authMiddleware, makeProxy(services['/api/agents'], '/api/agents'));
 app.use('/api/billing', authMiddleware, makeProxy(services['/api/billing'], '/api/billing'));
+
+// Exchange Agent routes
+// Agent Card — public discovery, no JWT required
+app.use('/.well-known', makeProxy(services['/.well-known'], '/.well-known'));
+// A2A sessions list — portal UI path, requires JWT
+app.use('/a2a/sessions', authMiddleware, makeProxy(services['/a2a'], '/a2a/sessions'));
+// A2A task and MCP endpoints — API key auth handled inside exchange-agent
+app.use('/a2a', makeProxy(services['/a2a'], '/a2a'));
+app.use('/mcp', makeProxy(services['/mcp'], '/mcp'));
 
 // 404 fallback
 app.use((_req, res) => res.status(404).json({ success: false, error: 'Route not found' }));

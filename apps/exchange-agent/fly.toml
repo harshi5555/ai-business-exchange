@@ -1,0 +1,37 @@
+app = "bx-exchange-agent"
+primary_region = "lhr"
+kill_signal = "SIGINT"
+kill_timeout = "10s"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT     = "3008"
+  NODE_ENV = "production"
+  PARTNER_SERVICE_URL      = "http://bx-partner-service.internal:3002"
+  MAPPING_ENGINE_URL       = "http://bx-mapping-engine.internal:3005"
+  SUBSCRIPTION_SERVICE_URL = "http://bx-subscription-service.internal:3003"
+  INTEGRATION_SERVICE_URL  = "http://bx-integration-service.internal:3004"
+  GATEWAY_URL              = "https://bx-gateway.fly.dev"
+
+[http_service]
+  internal_port = 3008
+  force_https   = true
+  auto_stop_machines  = true
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[http_service.checks]]
+  grace_period = "10s"
+  interval     = "30s"
+  method       = "GET"
+  path         = "/health"
+  protocol     = "http"
+  timeout      = "5s"
+  success_threshold = 1
+  failure_threshold = 3
+
+[[vm]]
+  size   = "shared-cpu-1x"
+  memory = "512mb"

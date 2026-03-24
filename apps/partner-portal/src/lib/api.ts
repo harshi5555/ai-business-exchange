@@ -246,3 +246,16 @@ export interface BrandingConfig {
   platformName?: string;
   tagline?: string;
 }
+
+// ─── A2A / Exchange Agent ─────────────────────────────────────────────────────
+export const a2aApi = {
+  listSessions: (page = 1, pageSize = 20) =>
+    api.get(`/a2a/sessions?page=${page}&pageSize=${pageSize}`),
+};
+
+// ─── API Keys ─────────────────────────────────────────────────────────────────
+export const apiKeysApi = {
+  list:     ()          => api.get('/api/auth/keys'),
+  generate: ()          => api.post('/api/auth/keys'),
+  revoke:   (id: string) => api.delete(`/api/auth/keys/${id}`),
+};

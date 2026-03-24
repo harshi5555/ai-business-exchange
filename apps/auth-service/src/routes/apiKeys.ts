@@ -4,6 +4,21 @@ import { AuthService } from '../services/authService';
 const router = Router();
 const authService = new AuthService();
 
+// GET /api/auth/keys — list active API keys for this partner
+router.get('/', async (req: Request, res: Response) => {
+  const partnerId = req.headers['x-partner-id'] as string;
+  if (!partnerId) {
+    res.status(401).json({ success: false, error: 'Unauthorized' });
+    return;
+  }
+  try {
+    const keys = await authService.listApiKeys(partnerId);
+    res.json({ success: true, data: keys });
+  } catch {
+    res.status(500).json({ success: false, error: 'Failed to list API keys' });
+  }
+});
+
 // POST /api/auth/keys — issue a new API key
 router.post('/', async (req: Request, res: Response) => {
   const partnerId = req.headers['x-partner-id'] as string;

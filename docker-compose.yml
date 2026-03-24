@@ -9,7 +9,7 @@ services:
       POSTGRES_USER: bx_user
       POSTGRES_PASSWORD: bx_password
     ports:
-      - "11007:5432"
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./packages/database/migrations:/docker-entrypoint-initdb.d
@@ -27,7 +27,7 @@ services:
     container_name: bx-gateway
     restart: unless-stopped
     ports:
-      - "11000:3000"
+      - "3000:3000"
     environment:
       PORT: 3000
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-production}
@@ -38,6 +38,7 @@ services:
       MAPPING_ENGINE_URL: http://mapping-engine:3005
       AGENT_ORCHESTRATOR_URL: http://agent-orchestrator:3006
       BILLING_SERVICE_URL: http://billing-service:3007
+      EXCHANGE_AGENT_URL: http://exchange-agent:3008
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
     depends_on:
       - auth-service
@@ -49,7 +50,7 @@ services:
     container_name: bx-auth-service
     restart: unless-stopped
     ports:
-      - "11001:3001"
+      - "3001:3001"
     environment:
       PORT: 3001
       DATABASE_URL: postgresql://bx_user:bx_password@postgres:5432/business_exchange
@@ -67,7 +68,7 @@ services:
     container_name: bx-partner-service
     restart: unless-stopped
     ports:
-      - "11002:3002"
+      - "3002:3002"
     environment:
       PORT: 3002
       DATABASE_URL: postgresql://bx_user:bx_password@postgres:5432/business_exchange
@@ -83,7 +84,7 @@ services:
     container_name: bx-subscription-service
     restart: unless-stopped
     ports:
-      - "11003:3003"
+      - "3003:3003"
     environment:
       PORT: 3003
       DATABASE_URL: postgresql://bx_user:bx_password@postgres:5432/business_exchange
@@ -98,7 +99,7 @@ services:
     container_name: bx-integration-service
     restart: unless-stopped
     ports:
-      - "11004:3004"
+      - "3004:3004"
     environment:
       PORT: 3004
       DATABASE_URL: postgresql://bx_user:bx_password@postgres:5432/business_exchange
@@ -114,7 +115,7 @@ services:
     container_name: bx-mapping-engine
     restart: unless-stopped
     ports:
-      - "11005:3005"
+      - "3005:3005"
     environment:
       PORT: 3005
       DATABASE_URL: postgresql://bx_user:bx_password@postgres:5432/business_exchange
@@ -129,7 +130,7 @@ services:
     container_name: bx-agent-orchestrator
     restart: unless-stopped
     ports:
-      - "11006:3006"
+      - "3006:3006"
     environment:
       PORT: 3006
       DATABASE_URL: postgresql://bx_user:bx_password@postgres:5432/business_exchange
@@ -145,7 +146,7 @@ services:
     container_name: bx-billing-service
     restart: unless-stopped
     ports:
-      - "11010:3007"
+      - "3007:3007"
     environment:
       PORT: 3007
       DATABASE_URL: postgresql://bx_user:bx_password@postgres:5432/business_exchange
@@ -160,11 +161,33 @@ services:
     container_name: bx-partner-portal
     restart: unless-stopped
     ports:
-      - "11009:3100"
+      - "3100:3100"
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:11000
+      NEXT_PUBLIC_API_URL: http://localhost:3000
     depends_on:
       - gateway
+
+  exchange-agent:
+    build:
+      context: .
+      dockerfile: apps/exchange-agent/Dockerfile
+    container_name: bx-exchange-agent
+    restart: unless-stopped
+    ports:
+      - "3008:3008"
+    environment:
+      PORT: 3008
+      DATABASE_URL: postgresql://bx_user:bx_password@postgres:5432/business_exchange
+      PARTNER_SERVICE_URL: http://partner-service:3002
+      MAPPING_ENGINE_URL: http://mapping-engine:3005
+      SUBSCRIPTION_SERVICE_URL: http://subscription-service:3003
+      INTEGRATION_SERVICE_URL: http://integration-service:3004
+      GATEWAY_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:3000}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-}
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-production}
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
   postgres_data:
