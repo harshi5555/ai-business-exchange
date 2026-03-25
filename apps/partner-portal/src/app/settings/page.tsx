@@ -1,10 +1,10 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { partnersApi, mappingsApi, brandingApi, authApi, apiKeysApi, BrandingConfig } from '@/lib/api';
+import { partnersApi, mappingsApi, brandingApi, authApi, apiKeysApi, BrandingConfig, API_URL } from '@/lib/api';
 import { getPartnerId, isAdmin } from '@/lib/utils';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Webhook, CheckCircle2, AlertCircle, Info, Plus, X, Palette, Lock, Cpu, Wifi, Key, Trash2, Copy } from 'lucide-react';
+import { Webhook, CheckCircle2, AlertCircle, Info, Plus, X, Palette, Lock, Cpu, Wifi, Key, Trash2, Copy, Globe, Lock as LockIcon } from 'lucide-react';
 import { useTheme } from '@/components/ThemeProvider';
 
 const ALL_FORMATS = ['json', 'xml', 'csv', 'edi-x12', 'edifact'];
@@ -93,10 +93,19 @@ export default function SettingsPage() {
       .catch(() => {});
   };
 
+  const [copiedEndpoint, setCopiedEndpoint] = useState<string | null>(null);
+
   const copyKey = (key: string) => {
     navigator.clipboard.writeText(key).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const copyEndpoint = (endpoint: string) => {
+    navigator.clipboard.writeText(endpoint).then(() => {
+      setCopiedEndpoint(endpoint);
+      setTimeout(() => setCopiedEndpoint(null), 2000);
     });
   };
 
@@ -678,6 +687,216 @@ export default function SettingsPage() {
           <Button variant="secondary" size="sm" onClick={generateKey} loading={apiKeyLoading}>
             <Key className="w-3.5 h-3.5 mr-1.5" />Generate New API Key
           </Button>
+        </Card>
+      )}
+
+      {/* Protocol Endpoints */}
+      {!admin && (
+        <Card>
+          <div className="flex items-center gap-2 mb-4">
+            <Globe className="w-4 h-4 text-indigo-600" />
+            <h2 className="text-sm font-semibold text-gray-700">Protocol Endpoints</h2>
+          </div>
+          <p className="text-xs text-gray-500 mb-6">
+            Use these endpoints to integrate with the platform. Authentication requires the <code className="bg-gray-100 px-1 py-0.5 rounded text-xs">x-api-key</code> header for protected endpoints.
+          </p>
+
+          {/* A2A Protocol Section */}
+          <div className="mb-6">
+            <h3 className="text-xs font-semibold text-gray-600 mb-3 flex items-center gap-2">
+              <span className="text-indigo-600">A2A Protocol</span>
+              <span className="text-gray-400 text-xs font-normal">({API_URL})</span>
+            </h3>
+            <div className="space-y-2">
+              {/* GET /.well-known/agent.json */}
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <div>
+                    <p className="text-xs font-mono font-semibold text-gray-700">
+                      <span className="text-blue-600">GET</span> /.well-known/agent.json
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">Agent discovery card</p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs font-semibold">
+                      <Globe className="w-3 h-3" />Public
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <code className="flex-1 text-xs font-mono bg-white border border-gray-200 rounded px-2 py-1.5 break-all text-gray-600">{`${API_URL}/.well-known/agent.json`}</code>
+                  <button
+                    onClick={() => copyEndpoint(`${API_URL}/.well-known/agent.json`)}
+                    className="shrink-0 p-1.5 rounded hover:bg-gray-100 transition-colors"
+                    title="Copy"
+                  >
+                    {copiedEndpoint === `${API_URL}/.well-known/agent.json` ? <CheckCircle2 className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4 text-gray-600" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* POST /a2a/tasks */}
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <div>
+                    <p className="text-xs font-mono font-semibold text-gray-700">
+                      <span className="text-green-600">POST</span> /a2a/tasks
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">Create negotiation task</p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded text-xs font-semibold">
+                      <LockIcon className="w-3 h-3" />x-api-key
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <code className="flex-1 text-xs font-mono bg-white border border-gray-200 rounded px-2 py-1.5 break-all text-gray-600">{`POST ${API_URL}/a2a/tasks`}</code>
+                  <button
+                    onClick={() => copyEndpoint(`POST ${API_URL}/a2a/tasks`)}
+                    className="shrink-0 p-1.5 rounded hover:bg-gray-100 transition-colors"
+                    title="Copy"
+                  >
+                    {copiedEndpoint === `POST ${API_URL}/a2a/tasks` ? <CheckCircle2 className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4 text-gray-600" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* GET /a2a/tasks/:taskId */}
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <div>
+                    <p className="text-xs font-mono font-semibold text-gray-700">
+                      <span className="text-blue-600">GET</span> /a2a/tasks/:taskId
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">Poll task status</p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded text-xs font-semibold">
+                      <LockIcon className="w-3 h-3" />x-api-key
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <code className="flex-1 text-xs font-mono bg-white border border-gray-200 rounded px-2 py-1.5 break-all text-gray-600">{`GET ${API_URL}/a2a/tasks/:taskId`}</code>
+                  <button
+                    onClick={() => copyEndpoint(`GET ${API_URL}/a2a/tasks/:taskId`)}
+                    className="shrink-0 p-1.5 rounded hover:bg-gray-100 transition-colors"
+                    title="Copy"
+                  >
+                    {copiedEndpoint === `GET ${API_URL}/a2a/tasks/:taskId` ? <CheckCircle2 className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4 text-gray-600" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* POST /a2a/tasks/:taskId/send */}
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <div>
+                    <p className="text-xs font-mono font-semibold text-gray-700">
+                      <span className="text-green-600">POST</span> /a2a/tasks/:taskId/send
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">Continue negotiation / send message</p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded text-xs font-semibold">
+                      <LockIcon className="w-3 h-3" />x-api-key
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <code className="flex-1 text-xs font-mono bg-white border border-gray-200 rounded px-2 py-1.5 break-all text-gray-600">{`POST ${API_URL}/a2a/tasks/:taskId/send`}</code>
+                  <button
+                    onClick={() => copyEndpoint(`POST ${API_URL}/a2a/tasks/:taskId/send`)}
+                    className="shrink-0 p-1.5 rounded hover:bg-gray-100 transition-colors"
+                    title="Copy"
+                  >
+                    {copiedEndpoint === `POST ${API_URL}/a2a/tasks/:taskId/send` ? <CheckCircle2 className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4 text-gray-600" />}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* MCP Protocol Section */}
+          <div>
+            <h3 className="text-xs font-semibold text-gray-600 mb-3 flex items-center gap-2">
+              <span className="text-indigo-600">MCP Protocol</span>
+              <span className="text-gray-400 text-xs font-normal">(JSON-RPC 2.0)</span>
+            </h3>
+            <div className="space-y-2">
+              {/* POST /mcp - initialize */}
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <div>
+                    <p className="text-xs font-mono font-semibold text-gray-700">
+                      <span className="text-green-600">POST</span> /mcp
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">Initialize, discover tools</p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs font-semibold">
+                      <Globe className="w-3 h-3" />Public
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <code className="flex-1 text-xs font-mono bg-white border border-gray-200 rounded px-2 py-1.5 break-all text-gray-600">{`POST ${API_URL}/mcp`}</code>
+                  <button
+                    onClick={() => copyEndpoint(`POST ${API_URL}/mcp`)}
+                    className="shrink-0 p-1.5 rounded hover:bg-gray-100 transition-colors"
+                    title="Copy"
+                  >
+                    {copiedEndpoint === `POST ${API_URL}/mcp` ? <CheckCircle2 className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4 text-gray-600" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* POST /mcp - tools/list, tools/call */}
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <div>
+                    <p className="text-xs font-mono font-semibold text-gray-700">
+                      <span className="text-green-600">POST</span> /mcp
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">tools/list, tools/call</p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded text-xs font-semibold">
+                      <LockIcon className="w-3 h-3" />x-api-key
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <code className="flex-1 text-xs font-mono bg-white border border-gray-200 rounded px-2 py-1.5 break-all text-gray-600">{`POST ${API_URL}/mcp`}</code>
+                  <button
+                    onClick={() => copyEndpoint(`POST ${API_URL}/mcp`)}
+                    className="shrink-0 p-1.5 rounded hover:bg-gray-100 transition-colors"
+                    title="Copy"
+                  >
+                    {copiedEndpoint === `POST ${API_URL}/mcp` ? <CheckCircle2 className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4 text-gray-600" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Available Tools */}
+              <div className="rounded-lg border border-gray-200 bg-blue-50 p-3 mt-3">
+                <p className="text-xs font-semibold text-gray-700 mb-2">Available Tools</p>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <code className="text-xs font-mono bg-white border border-gray-200 rounded px-2 py-1.5 block text-gray-600">get_platform_info, register_partner, discover_subscriptions, submit_schema_sample, request_subscription, get_onboarding_status</code>
+                  </div>
+                  <button
+                    onClick={() => copyEndpoint('get_platform_info, register_partner, discover_subscriptions, submit_schema_sample, request_subscription, get_onboarding_status')}
+                    className="shrink-0 p-1.5 rounded hover:bg-blue-100 transition-colors"
+                    title="Copy"
+                  >
+                    {copiedEndpoint === 'get_platform_info, register_partner, discover_subscriptions, submit_schema_sample, request_subscription, get_onboarding_status' ? <CheckCircle2 className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4 text-gray-600" />}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </Card>
       )}
 
