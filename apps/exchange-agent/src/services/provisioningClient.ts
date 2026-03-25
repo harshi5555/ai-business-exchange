@@ -6,6 +6,33 @@ const logger = createLogger('exchange-agent:provisioning');
 const PARTNER_SERVICE_URL       = process.env.PARTNER_SERVICE_URL       ?? 'http://localhost:3002';
 const MAPPING_ENGINE_URL        = process.env.MAPPING_ENGINE_URL        ?? 'http://localhost:3005';
 const SUBSCRIPTION_SERVICE_URL  = process.env.SUBSCRIPTION_SERVICE_URL ?? 'http://localhost:3003';
+const AUTH_SERVICE_URL          = process.env.AUTH_SERVICE_URL          ?? 'http://localhost:3001';
+
+let _cachedToken: string | null = null;
+
+async function getInternalToken(): Promise<string> {
+  if (_cachedToken) return _cachedToken;
+  const explicit = process.env.INTERNAL_SERVICE_TOKEN;
+  if (explicit) { _cachedToken = explicit; return explicit; }
+  // Bootstrap: obtain an admin JWT to use for internal service calls
+  const email    = process.env.ADMIN_EMAIL    ?? 'admin';
+  const password = process.env.ADMIN_PASSWORD ?? 'changeme';
+  try {
+    const res = await axios.post<{ success: boolean; data: { accessToken: string } }>(
+      `${AUTH_SERVICE_URL}/api/auth/login`,
+      { email, password },
+      { timeout: 10000 },
+    );
+    if (res.data.success) {
+      _cachedToken = res.data.data.accessToken;
+      logger.info('Bootstrapped internal service token from auth-service');
+      return _cachedToken;
+    }
+  } catch (err) {
+    logger.warn({ err }, 'Failed to bootstrap internal token; falling back to empty');
+  }
+  return '';
+}
 
 export interface RegisterPartnerInput {
   name: string;
@@ -50,7 +77,7 @@ export interface SubscriptionResult {
 export class ProvisioningClient {
   async registerPartner(input: RegisterPartnerInput): Promise<RegisterPartnerResult> {
     logger.info({ domain: input.domain }, 'Registering partner via partner-service');
-    const res = await axios.post<{ success: boolean; data: { partner: { id: string }; apiKey?: string } }>(
+    const res = await axios.post<{ success: boolean; data: { id: string; apiKey?: string } }>(
       `${PARTNER_SERVICE_URL}/api/partners`,
       {
         name: input.name,
@@ -64,27 +91,30 @@ export class ProvisioningClient {
     );
     if (!res.data.success) throw new Error('Partner registration failed');
     return {
-      partnerId: res.data.data.partner.id,
+      partnerId: res.data.data.id,
       apiKey: res.data.data.apiKey,
     };
   }
 
   async inferSchema(input: SchemaInferenceInput): Promise<SchemaInferenceResult> {
     logger.info({ partnerId: input.partnerId }, 'Inferring schema via mapping-engine');
+    const token = await getInternalToken();
     const res = await axios.post<{
       success: boolean;
       data: { id: string; mappingRules: SchemaInferenceResult['mappingRules']; autoApproved: boolean };
     }>(
-      `${MAPPING_ENGINE_URL}/api/mappings/schemas/register`,
+      `${MAPPING_ENGINE_URL}/api/mappings/schemas`,
       {
-        partnerId: input.partnerId,
         format: input.format,
         messageType: input.messageType,
         schemaDirection: input.direction,
         samplePayload: input.samplePayload,
       },
       {
-        headers: { Authorization: `Bearer ${input.internalAuthToken}` },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'x-partner-id': input.partnerId,
+        },
         timeout: 60000,
       },
     );
@@ -96,11 +126,12 @@ export class ProvisioningClient {
     };
   }
 
-  async listAvailableSubscriptions(internalAuthToken: string): Promise<Array<{ id: string; providerPartnerId: string; providerName?: string }>> {
+  async listAvailableSubscriptions(_internalAuthToken?: string): Promise<Array<{ id: string; providerPartnerId: string; providerName?: string }>> {
+    const token = await getInternalToken();
     const res = await axios.get<{ success: boolean; data: Array<{ id: string; provider_partner_id: string; provider_name?: string }> }>(
-      `${SUBSCRIPTION_SERVICE_URL}/api/subscriptions/available`,
+      `${SUBSCRIPTION_SERVICE_URL}/api/subscriptions`,
       {
-        headers: { Authorization: `Bearer ${internalAuthToken}` },
+        headers: { Authorization: `Bearer ${token}` },
         timeout: 10000,
       },
     );
@@ -113,6 +144,7 @@ export class ProvisioningClient {
   }
 
   async createSubscription(input: SubscriptionInput): Promise<SubscriptionResult> {
+    const token = await getInternalToken();
     const res = await axios.post<{ success: boolean; data: { id: string; status: string } }>(
       `${SUBSCRIPTION_SERVICE_URL}/api/subscriptions`,
       {
@@ -120,7 +152,7 @@ export class ProvisioningClient {
         providerPartnerId: input.providerPartnerId,
       },
       {
-        headers: { Authorization: `Bearer ${input.internalAuthToken}` },
+        headers: { Authorization: `Bearer ${token}` },
         timeout: 10000,
       },
     );
